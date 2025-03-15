@@ -5,8 +5,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-import concurrent.futures
 import pandas as pd
+from typing import List
+from babel import numbers as bn
 
 # Configure Selenium
 options = Options()
@@ -22,9 +23,22 @@ driver.implicitly_wait(0.1)  # Reduce implicit wait time
 
 print("Install done")
 
+def get_product_name(search_sku) -> str:
+    url = f"https://www.long-mcquade.com/instore_stock/{search_sku}/"
+    driver.get(url)
 
-def scrape_lm_used_listings(sku):
-    url = f"https://www.long-mcquade.com/instore_stock/{sku}/"
+    product_link = driver.find_elements(By.CSS_SELECTOR, "a[class*='link-orange-2']")[0]
+
+    product_link.click()
+
+    WebDriverWait(driver, 5).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "span[id*='product-model']")))
+
+    product_model = driver.find_elements(By.CSS_SELECTOR, "span[id*='product-model']")[0].text.strip()
+
+    return product_model
+
+def scrape_lm_used_listings(search_sku) -> List[dict]:
+    url = f"https://www.long-mcquade.com/instore_stock/{search_sku}/"
     driver.get(url)
 
     # Click all demo buttons at once
@@ -75,19 +89,41 @@ def scrape_lm_used_listings(sku):
                     "SKU": cols[0].text.strip(),
                     "Serial Number": cols[1].text.strip(),
                     "Condition": cols[2].text.strip(),
-                    "Price": cols[3].text.strip()
+                    "Price": float(bn.parse_decimal(cols[3].text.strip().replace("$", ""), locale="en_US"))
                 })
 
     return used_listings
 
 
-# Example usage
-sku = "742640"
-listings = scrape_lm_used_listings(sku)
+skus = [
+    "524892",
+    "385148",
+    "726449",
+    "742640",
+    "808888",
+    "385147",
+    "726448"
+]
+
+writer = pd.ExcelWriter("Stock.xlsx", engine="xlsxwriter")
+
+for sku in skus:
+    print("\n-----------------------------------\n")
+    product_name = get_product_name(sku)
+    print(f"{product_name} - {sku}\n")
+    sheet_name = f"{product_name} ({sku})"
+    listings = scrape_lm_used_listings(sku)
+    stock_df = pd.DataFrame(listings)
+    stock_df.sort_values(by="Price", axis=0, ascending=True, inplace=True)
+    stock_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    currency_format = writer.book.add_format({"num_format": "$#,##0.00;-$#,##0.00"})
+    writer.sheets[sheet_name].autofit()
+
+    price_width = max(stock_df["Price"].astype(str).map(len).max(), len("Price"))
+    writer.sheets[sheet_name].set_column(4, 4, width=round(1.5*price_width), cell_format=currency_format)
+
+writer.close()
 
 # Close WebDriver
 driver.quit()
-
-# Print results
-stock_df = pd.DataFrame(listings)
-stock_df.to_excel(excel_writer=f"Stock_{sku}.xlsx", sheet_name="Stock", index=False)
