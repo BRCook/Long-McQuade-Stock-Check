@@ -105,7 +105,7 @@ skus = [
     "726448"
 ]
 
-writer = pd.ExcelWriter("Stock.xlsx", mode="a", engine="xlsxwriter", if_sheet_exists="replace")
+writer = pd.ExcelWriter("Stock.xlsx", engine="xlsxwriter")
 
 for sku in skus:
     print("\n-----------------------------------\n")
